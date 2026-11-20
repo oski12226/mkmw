@@ -1,0 +1,1048 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#080f1c">
+<title>Warszawa Transit</title>
+<link rel="stylesheet"
+href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root {
+  --bg:#080f1c;--panel:#101d30;--panel2:#14243a;
+  --border:#243650;--blue:#258cff;--cyan:#36d5ed;
+  --text:#f1f6ff;--muted:#91a4bd;--green:#37d99a;
+  --orange:#ffb454;--red:#ff737d;
+}
+* {box-sizing:border-box}
+body {margin:0;background:var(--bg);color:var(--text);font-family:Arial,sans-serif}
+button,input {font:inherit}
+button {cursor:pointer}
+.app {display:grid;grid-template-columns:245px minmax(0,1fr);min-height:100vh}
+.sidebar {background:#091321;border-right:1px solid var(--border);padding:24px 16px}
+.logo {font-size:19px;font-weight:900;margin-bottom:35px;letter-spacing:1px}
+.logo span {color:var(--blue)}
+.nav-title {color:#637a98;font-size:11px;margin:20px 10px 10px}
+.nav button {
+  width:100%;border:0;background:transparent;color:var(--muted);
+  text-align:left;padding:13px;border-radius:10px;margin-bottom:5px;
+}
+.nav button:hover,.nav button.active {background:#162b45;color:white}
+.nav button.active {box-shadow:inset 3px 0 var(--blue)}
+main {padding:27px;min-width:0}
+.header {display:flex;justify-content:space-between;align-items:center;gap:15px;margin-bottom:25px}
+.header h1 {margin:0;font-size:29px}
+.subtitle {color:var(--muted);margin-top:7px;font-size:13px}
+.header-right {display:flex;align-items:center;gap:10px}
+.live {background:#102c2b;color:var(--green);border:1px solid #20594d;
+  padding:10px 13px;border-radius:30px;font-size:12px;white-space:nowrap}
+.refresh {border:0;background:var(--blue);color:white;padding:11px 15px;
+  border-radius:9px;font-weight:bold}
+.refresh:hover {background:#1474dc}
+.stats {display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px;margin-bottom:20px}
+.stat {background:linear-gradient(140deg,#14263e,#0e1a2b);
+  border:1px solid var(--border);padding:18px;border-radius:15px}
+.stat small {color:var(--muted)}
+.stat h2 {font-size:29px;margin:12px 0 0}
+.panel {background:var(--panel);border:1px solid var(--border);
+  border-radius:15px;overflow:hidden;min-width:0}
+.panel-header {padding:17px;border-bottom:1px solid var(--border);
+  display:flex;justify-content:space-between;align-items:center;gap:10px}
+.panel-header h3 {margin:0;font-size:16px}
+.panel-header small {color:var(--muted)}
+.content {display:grid;grid-template-columns:minmax(0,1.5fr) minmax(280px,1fr);gap:17px}
+.content>.panel:first-child {display:flex;flex-direction:column;overflow:hidden;isolation:isolate}
+#map {flex:1;min-height:530px;width:100%;background:#122238;
+  border-radius:0 0 14px 14px;overflow:hidden;touch-action:pan-x pan-y}
+.leaflet-popup-content-wrapper,.leaflet-popup-tip {background:#14243a;color:white}
+.leaflet-popup-content {line-height:1.7}
+.list-wrapper {padding:13px}
+.search {width:100%;background:#0b1727;border:1px solid var(--border);
+  color:white;padding:13px;outline:none;border-radius:9px;margin-bottom:12px}
+.search:focus {border-color:var(--blue)}
+.vehicles {max-height:465px;overflow:auto}
+.vehicle {display:flex;align-items:center;gap:12px;padding:14px 10px;
+  border-bottom:1px solid var(--border);cursor:pointer;border-radius:8px}
+.vehicle:hover,.vehicle.selected {background:#1a304b}
+.line {background:#164b7d;border:1px solid #2679bd;padding:11px;
+  min-width:46px;text-align:center;border-radius:9px;font-weight:bold}
+.vehicle-info {flex:1;min-width:0}
+.vehicle-info strong {display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vehicle-info small {color:var(--muted);display:block;margin-top:5px}
+.delay {color:var(--green);font-size:12px;white-space:nowrap}
+.empty {padding:25px;text-align:center;color:var(--muted)}
+.details {padding:17px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.detail {background:var(--panel2);border:1px solid var(--border);
+  border-radius:12px;padding:16px;min-width:0}
+.detail small {color:var(--muted)}
+.detail strong {display:block;font-size:18px;margin-top:8px;overflow-wrap:anywhere}
+.details-close {margin-left:auto;width:30px;height:30px;flex:0 0 30px;
+  border:1px solid var(--border);border-radius:8px;background:var(--panel2);
+  color:var(--text);font-size:20px;display:grid;place-items:center}
+.bottom {margin-top:18px;display:grid;grid-template-columns:1fr 1fr;gap:17px}
+.info {padding:17px;color:var(--muted);font-size:13px;line-height:1.8}
+.status-ok {color:var(--green)}.status-error {color:var(--red)}
+.page {display:none}.page.active {display:block}
+.sort-controls {display:flex;align-items:center;flex-wrap:wrap;gap:7px;
+  margin:0 0 12px;color:var(--muted);font-size:12px}
+.sort-button {border:1px solid var(--border);background:#0b1727;color:var(--muted);
+  padding:8px 10px;border-radius:8px;font-size:12px}
+.sort-button.active {background:#164b7d;border-color:#2679bd;color:white}
+.duty-toolbar {display:grid;grid-template-columns:minmax(180px,1fr) auto
+  minmax(160px,210px);align-items:center;gap:12px}
+.duty-toolbar .search {margin:0}
+.duty-date-label {color:var(--muted);font-size:13px}
+.duty-lines {margin-top:15px}
+.duty-line {border:1px solid var(--border);border-radius:11px;
+  margin-bottom:9px;overflow:hidden;background:#0d1a2b}
+.duty-line-button,.duty-task-button {width:100%;display:flex;
+  justify-content:space-between;align-items:center;gap:12px;
+  padding:14px 16px;background:transparent;color:var(--text);
+  border:0;text-align:left}
+.duty-line-button:hover,.duty-task-button:hover {background:#1a304b}
+.duty-line-meta,.duty-task-meta {color:var(--muted);font-size:12px}
+.duty-task-list {border-top:1px solid var(--border);padding:5px 10px 10px 22px;
+  background:#0a1524}
+.duty-task-button {padding:10px 12px;border-bottom:1px solid #1c2b40}
+.duty-task-button.active {background:#183554}
+.duty-detail-panel {margin-top:18px}
+.duty-trip {padding:15px 17px;border-bottom:1px solid var(--border)}
+.duty-trip-head {display:flex;justify-content:space-between;gap:12px;
+  align-items:center;margin-bottom:10px}
+.duty-trip-head span {font-size:12px;color:var(--muted)}
+.duty-stop {display:grid;grid-template-columns:58px minmax(0,1fr);
+  gap:10px;padding:5px 0;font-size:13px}
+.duty-stop-time {font-variant-numeric:tabular-nums;color:#9fcaff;font-weight:700}
+.duty-stop-name {color:var(--text)}
+.duty-trip summary {cursor:pointer;list-style:none}
+.duty-trip summary::-webkit-details-marker {display:none}
+.stop-search-wrap {padding:9px 10px;background:var(--panel)}
+.stop-search-wrap .search {margin:0;padding:11px 13px}
+#stopSearchResults:empty {display:none}
+#stopSearchResults:not(:empty) {margin-top:6px;border:1px solid var(--border);
+  border-radius:9px;background:var(--panel);overflow:hidden}
+.stop-result {cursor:pointer;padding:8px 10px;border-bottom:1px solid var(--border);
+  font-size:12px}
+.stop-result:hover {background:#1a304b}
+.stop-marker {width:13px;height:13px;border-radius:50%;background:#f4c542;
+  border:1px solid white;box-shadow:0 1px 4px #0008}
+.stop-popup-title {font-weight:800;font-size:14px;margin-bottom:7px}
+.stop-departures {max-height:220px;overflow:auto;min-width:210px}
+.stop-departure {display:flex;justify-content:space-between;gap:12px;
+  padding:5px 0;border-top:1px solid #34445b;font-size:12px}
+.stop-departure strong {color:#9fcaff;font-variant-numeric:tabular-nums}
+@media(max-width:1050px) {
+  .app {grid-template-columns:195px minmax(0,1fr)}
+  .content {grid-template-columns:1fr}
+  .stats {grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media(max-width:700px) {
+  .app {display:block}
+  .sidebar {padding:13px;border-right:0;border-bottom:1px solid var(--border)}
+  .logo {margin-bottom:12px}
+  .nav-title {display:none}
+  .nav {display:flex;overflow-x:auto;gap:4px}
+  .nav button {width:auto;white-space:nowrap;margin:0;font-size:12px}
+  main {padding:16px 12px}
+  .header {align-items:flex-start}
+  .header h1 {font-size:23px}
+  .header-right {flex-direction:column;align-items:flex-end}
+  .stats {grid-template-columns:1fr 1fr;gap:9px}
+  .stat {padding:13px}.stat h2 {font-size:24px}
+  #map {height:390px;min-height:390px}
+  .bottom {grid-template-columns:1fr}
+  .details {gap:9px}
+  .duty-toolbar {grid-template-columns:1fr}
+  .duty-date-label {margin-top:5px}
+  .duty-stop {grid-template-columns:62px minmax(0,1fr)}
+}
+</style>
+</head>
+<body>
+<div class="app">
+<aside class="sidebar">
+  <div class="logo">✦ WARSZAWA <span>TRANSIT</span></div>
+  <div class="nav-title">MENU GŁÓWNE</div>
+  <div class="nav">
+    <button class="active" data-page="map">🗺️ Mapa pojazdów</button>
+    <button data-page="vehicles">🚌 Wszystkie pojazdy</button>
+    <button data-page="duties">📋 Rozkłady brygadowe</button>
+    <button data-page="info">ℹ️ Informacje</button>
+  </div>
+</aside>
+<main>
+<header class="header">
+  <div>
+    <h1 id="pageTitle">Mapa pojazdów</h1>
+    <div class="subtitle">Transport publiczny · Warszawa</div>
+  </div>
+  <div class="header-right">
+    <div class="live" id="connection">● Łączenie...</div>
+    <button class="refresh" id="refresh">↻ Odśwież</button>
+  </div>
+</header>
+<section class="page active" id="page-map">
+  <div class="stats">
+    <div class="stat"><small>🚌 Aktywne pojazdy</small><h2 id="total">—</h2></div>
+    <div class="stat"><small>🚋 Tramwaje</small><h2 id="trams">—</h2></div>
+    <div class="stat"><small>🚍 Autobusy</small><h2 id="buses">—</h2></div>
+    <div class="stat"><small>🔀 Linie w ruchu</small><h2 id="routes">—</h2></div>
+    <div class="stat"><small>📡 Dane GPS</small><h2 id="late">—</h2></div>
+  </div>
+  <div class="content">
+    <section class="panel">
+      <div class="panel-header"><h3>🗺️ Mapa na żywo</h3><small id="mapCount">0 pojazdów</small></div>
+      <div class="stop-search-wrap">
+        <input class="search" id="stopSearch" placeholder="Szukaj przystanku..."
+          aria-label="Szukaj przystanku">
+        <div id="stopSearchResults"></div>
+      </div>
+      <div id="map"></div>
+    </section>
+    <section class="panel">
+      <div class="panel-header">
+        <h3>📊 Szczegóły pojazdu</h3>
+        <button type="button" id="closeVehicleDetails" class="details-close"
+          aria-label="Zamknij szczegóły pojazdu">×</button>
+      </div>
+      <div id="details" class="info">Wybierz pojazd z listy lub mapy.</div>
+    </section>
+  </div>
+  <section class="panel" style="margin-top:18px">
+    <div class="panel-header"><h3>🚌 Pojazdy</h3><small id="count">0 wyników</small></div>
+    <div class="list-wrapper">
+      <input class="search" id="search" placeholder="Szukaj linii, pojazdu...">
+      <div class="sort-controls">
+        <span>Sortuj:</span>
+        <button type="button" class="sort-button active" data-sort="line">Według linii</button>
+        <button type="button" class="sort-button" data-sort="fleet">Według numeru</button>
+      </div>
+      <div class="vehicles" id="vehicleList">
+        <div class="empty">Pobieranie danych...</div>
+      </div>
+    </div>
+  </section>
+</section>
+<section class="page" id="page-vehicles">
+  <div class="stats">
+    <div class="stat"><small>🚌 Wszystkie pojazdy</small><h2 id="total2">—</h2></div>
+    <div class="stat"><small>🔀 Linie</small><h2 id="routes2">—</h2></div>
+    <div class="stat"><small>📡 Status danych</small><h2 id="apiShort">—</h2></div>
+  </div>
+  <section class="panel">
+    <div class="panel-header"><h3>🚌 Lista pojazdów</h3><small id="count2">0 wyników</small></div>
+    <div class="list-wrapper">
+      <input class="search" id="search2" placeholder="Wyszukaj linię, numer lub kierunek...">
+      <div class="vehicles" id="vehicleList2">
+        <div class="empty">Pobieranie danych...</div>
+      </div>
+    </div>
+  </section>
+</section>
+<section class="page" id="page-duties">
+  <section class="panel">
+    <div class="panel-header">
+      <h3>📋 Rozkłady brygadowe ZTM Warszawa</h3>
+      <small id="gtfsStatus">Ładowanie danych rozkładowych…</small>
+    </div>
+    <div class="list-wrapper">
+      <div class="duty-toolbar">
+        <input class="search" id="dutySearch" placeholder="Szukaj numeru linii..."
+          aria-label="Szukaj linii">
+        <label class="duty-date-label" for="dutyDate">Dzień rozkładowy</label>
+        <input class="search" type="date" id="dutyDate">
+      </div>
+      <div id="dutyLines" class="duty-lines">
+        <div class="empty">Pobieranie rozkładów GTFS…</div>
+      </div>
+    </div>
+  </section>
+  <section class="panel duty-detail-panel">
+    <div class="panel-header">
+      <h3 id="dutyDetailTitle">Rozkład brygadowy</h3>
+      <small id="dutyDetailMeta">Wybierz linię, a następnie brygadę</small>
+    </div>
+    <div id="dutyDetail" class="info">Tutaj pojawi się rozkład wybranej brygady.</div>
+  </section>
+</section>
+<section class="page" id="page-info">
+  <div class="stats">
+    <div class="stat"><small>📡 Połączenie danych</small><h2 id="infoConnection">—</h2></div>
+    <div class="stat"><small>🚌 Pojazdy</small><h2 id="infoVehicles">—</h2></div>
+    <div class="stat"><small>🔀 Linie</small><h2 id="infoRoutes">—</h2></div>
+    <div class="stat"><small>🔄 Odświeżanie</small><h2>15 s</h2></div>
+  </div>
+  <div class="bottom">
+    <section class="panel">
+      <div class="panel-header"><h3>⚙️ Status systemu</h3></div>
+      <div class="info" id="apiStatus">Oczekiwanie na dane...</div>
+    </section>
+    <section class="panel">
+      <div class="panel-header"><h3>📡 O projekcie</h3></div>
+      <div class="info">
+        <b>Warszawa Transit</b><br>
+        Niezależny projekt prezentujący komunikację miejską w Warszawie.<br><br>
+        Dane miejskie: Miasto Stołeczne Warszawa, Otwarte Dane Warszawy
+        (<a href="https://dane.um.warszawa.pl/pl/catalogue?category=Transport&category_name=Transport"
+        target="_blank" rel="noopener">katalog Transport</a>).<br>
+        Pozycje pojazdów: Warszawski GTFS-Realtime.<br>
+        Rozkłady: ZTM Warszawa, GTFS przygotowany przez Mikołaja Kuranowskiego.<br>
+        Mapa: OpenStreetMap / Leaflet.<br><br>
+        Pozycje pojazdów pochodzą z ostatniego komunikatu GPS i mogą mieć
+        niewielkie opóźnienie. Metro nie jest pokazywane jako pozycja GPS.
+      </div>
+    </section>
+  </div>
+</section>
+</main>
+</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/protobufjs@7.4.0/dist/protobuf.min.js"></script>
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const GTFS_URL = "https://mkuran.pl/gtfs/warsaw.zip";
+const VEHICLES_URL = "https://mkuran.pl/gtfs/warsaw/vehicles.pb";
+const PROTO_URL =
+  "https://raw.githubusercontent.com/google/transit/master/gtfs-realtime/proto/gtfs-realtime.proto";
+const REFRESH_MS = 15000;
+const APP_VERSION = "1.0.0";
+let map = null;
+let mapReady = false;
+let vehicles = [];
+let markers = new Map();
+let stopLayer = null;
+let stopMarkers = new Map();
+let selectedVehicle = null;
+let selectedRouteLayer = null;
+let gtfs = {routes:[],trips:[],stops:[],calendar:[],calendarDates:[]};
+let gtfsLoaded = false;
+let gtfsZip = null;
+let stopTimesPromise = null;
+let stopTimesRows = null;
+let feedMessageType = null;
+let loadPromise = null;
+let expandedDutyRoute = null;
+let selectedDutyKey = null;
+let vehicleSortMode = "line";
+const routeCoordinatesCache = new Map();
+const $escape = value => String(value ?? "").replace(/[&<>"']/g, ch =>
+  ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[ch]);
+
+function initMap() {
+  if (typeof L === "undefined") {
+    $("connection").textContent = "● Błąd mapy";
+    return;
+  }
+  map = L.map("map").setView([52.2297,21.0122],12);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution:"© OpenStreetMap contributors",subdomains:["a","b","c"],maxZoom:19
+  }).addTo(map);
+  mapReady = true;
+}
+function parseCsv(text) {
+  const rows = [];
+  let row = [], field = "", quoted = false;
+  for (let i=0;i<text.length;i++) {
+    const ch = text[i], next = text[i+1];
+    if (quoted) {
+      if (ch === '"' && next === '"') {field += '"';i++;}
+      else if (ch === '"') quoted = false;
+      else field += ch;
+    } else if (ch === '"') quoted = true;
+    else if (ch === ",") {row.push(field);field = "";}
+    else if (ch === "\n") {
+      row.push(field.replace(/\r$/,""));
+      if (row.some(value => value !== "")) rows.push(row);
+      row = [];field = "";
+    } else field += ch;
+  }
+  if (field.length || row.length) {
+    row.push(field.replace(/\r$/,""));
+    rows.push(row);
+  }
+  if (!rows.length) return [];
+  const headers = rows.shift();
+  return rows.map(values => {
+    const item = {};
+    headers.forEach((key,index) => item[key] = values[index] ?? "");
+    return item;
+  });
+}
+function parseCsvStream(text, onRow) {
+  let row = [], field = "", quoted = false;
+  for (let i=0;i<text.length;i++) {
+    const ch = text[i], next = text[i+1];
+    if (quoted) {
+      if (ch === '"' && next === '"') {field += '"';i++;}
+      else if (ch === '"') quoted = false;
+      else field += ch;
+    } else if (ch === '"') quoted = true;
+    else if (ch === ",") {row.push(field);field = "";}
+    else if (ch === "\n") {
+      row.push(field.replace(/\r$/,""));
+      onRow(row);row = [];field = "";
+    } else field += ch;
+  }
+  if (field.length || row.length) {
+    row.push(field.replace(/\r$/,""));
+    onRow(row);
+  }
+}
+function dateKey(value) {return String(value || "").replaceAll("-","");}
+function activeServices(dateValue) {
+  const date = dateKey(dateValue);
+  const day = new Date(dateValue + "T12:00:00").getDay();
+  const weekday = ["sunday","monday","tuesday","wednesday","thursday",
+    "friday","saturday"][day];
+  const active = new Set(gtfs.calendar
+    .filter(row => row.start_date <= date && row.end_date >= date &&
+      row[weekday] === "1").map(row => row.service_id));
+  gtfs.calendarDates.forEach(row => {
+    if (row.date !== date) return;
+    if (row.exception_type === "1") active.add(row.service_id);
+    if (row.exception_type === "2") active.delete(row.service_id);
+  });
+  return active;
+}
+function routeMap() {
+  return new Map(gtfs.routes.map(route => [route.route_id,route]));
+}
+function routeName(routeId) {
+  const route = routeMap().get(routeId);
+  return route?.route_short_name || routeId || "—";
+}
+function routeType(routeId) {
+  const type = Number(routeMap().get(routeId)?.route_type);
+  if (type === 0 || type === 900) return "Tramwaj";
+  if (type === 1 || type === 400) return "Metro";
+  if (type === 2 || type === 100) return "Pociąg";
+  if (type === 3 || type === 700) return "Autobus";
+  return "Pojazd";
+}
+function getId(vehicle) {return String(vehicle.id || vehicle.label || "");}
+function getPosition(vehicle) {
+  const lat = Number(vehicle.lat), lon = Number(vehicle.lon);
+  return Number.isFinite(lat) && Number.isFinite(lon) &&
+    Math.abs(lat) <= 90 && Math.abs(lon) <= 180 ? [lat,lon] : null;
+}
+function formatClock(seconds) {
+  const value = Math.max(0,Number(seconds) || 0);
+  return String(Math.floor(value/3600)%48).padStart(2,"0") + ":" +
+    String(Math.floor(value%3600/60)).padStart(2,"0");
+}
+function tripForVehicle(vehicle) {
+  if (!vehicle.tripId) return null;
+  return gtfs.trips.find(trip => trip.trip_id === vehicle.tripId) || null;
+}
+function clearSelectedRoute() {
+  if (selectedRouteLayer && mapReady) map.removeLayer(selectedRouteLayer);
+  selectedRouteLayer = null;
+}
+function loadRouteShape(trip) {
+  if (!trip?.shape_id || !gtfsZip) return Promise.resolve([]);
+  if (routeCoordinatesCache.has(trip.shape_id)) {
+    return Promise.resolve(routeCoordinatesCache.get(trip.shape_id));
+  }
+  return gtfsZip.file("shapes.txt").async("string").then(csv => {
+    const rows = parseCsv(csv);
+    const points = rows.filter(row => row.shape_id === trip.shape_id)
+      .sort((a,b) => Number(a.shape_pt_sequence)-Number(b.shape_pt_sequence))
+      .map(row => [Number(row.shape_pt_lat),Number(row.shape_pt_lon)])
+      .filter(point => Number.isFinite(point[0]) && Number.isFinite(point[1]));
+    routeCoordinatesCache.set(trip.shape_id,points);
+    if (routeCoordinatesCache.size > 12) {
+      routeCoordinatesCache.delete(routeCoordinatesCache.keys().next().value);
+    }
+    return points;
+  });
+}
+async function showVehicleRoute(vehicle) {
+  clearSelectedRoute();
+  const trip = tripForVehicle(vehicle);
+  if (!trip || !mapReady) return;
+  const points = await loadRouteShape(trip);
+  if (!points.length || selectedVehicle !== getId(vehicle)) return;
+  selectedRouteLayer = L.polyline(points, {
+    color:"#36d5ed",weight:5,opacity:.88
+  }).addTo(map);
+}
+function renderStats() {
+  const buses = vehicles.filter(v => v.type === "Autobus").length;
+  const trams = vehicles.filter(v => v.type === "Tramwaj").length;
+  const lines = new Set(vehicles.map(v => v.route).filter(Boolean)).size;
+  $("total").textContent = vehicles.length;
+  $("trams").textContent = trams;
+  $("buses").textContent = buses;
+  $("routes").textContent = lines;
+  $("late").textContent = "LIVE";
+  $("total2").textContent = vehicles.length;
+  $("routes2").textContent = lines;
+  $("infoVehicles").textContent = vehicles.length;
+  $("infoRoutes").textContent = lines;
+}
+function makeVehicleIcon(vehicle) {
+  const label = $escape(vehicle.route || "?");
+  const fontSize = label.length > 4 ? 7 : label.length > 3 ? 8 : 10;
+  const isTram = vehicle.type === "Tramwaj";
+  const color = isTram ? "#d97706" : "#168cff";
+  const emoji = isTram ? "🚋" : "🚌";
+  return L.divIcon({
+    className:"",
+    html:'<div style="position:relative;width:38px;height:38px;font-family:Arial">' +
+      '<div style="position:absolute;inset:0;background:'+color+
+      ';border:2px solid white;border-radius:50%;box-shadow:0 3px 12px #0008"></div>' +
+      '<span style="position:absolute;top:0;left:2px;width:34px;height:20px;' +
+      'text-align:center;font-size:16px;line-height:20px;overflow:hidden">'+emoji+'</span>' +
+      '<span style="position:absolute;left:0;right:0;bottom:2px;text-align:center;' +
+      'font-size:'+fontSize+'px;line-height:13px;font-weight:900;color:white">'+
+      label+'</span></div>',
+    iconSize:[38,38],iconAnchor:[19,19]
+  });
+}
+function updateMap() {
+  if (!mapReady) return;
+  const active = new Set();
+  vehicles.forEach(vehicle => {
+    const pos = getPosition(vehicle), id = getId(vehicle);
+    if (!pos || !id) return;
+    active.add(id);
+    if (!markers.has(id)) {
+      const marker = L.marker(pos,{icon:makeVehicleIcon(vehicle),
+        riseOnHover:true,bubblingMouseEvents:false}).addTo(map);
+      marker.on("click",() => selectVehicle(id));
+      markers.set(id,marker);
+    } else {
+      const marker = markers.get(id);
+      marker.setLatLng(pos);
+      marker.setIcon(makeVehicleIcon(vehicle));
+    }
+  });
+  for (const [id,marker] of markers) {
+    if (!active.has(id)) {map.removeLayer(marker);markers.delete(id);}
+  }
+  $("mapCount").textContent = active.size + " pojazdów";
+}
+function vehicleText(vehicle) {
+  return [vehicle.route,vehicle.label,vehicle.id,vehicle.headsign,
+    vehicle.tripId,vehicle.type].join(" ").toLocaleLowerCase("pl");
+}
+function renderVehicleList(hostId,searchId,countId) {
+  const host = $(hostId);
+  if (!host) return;
+  const query = $(searchId).value.trim().toLocaleLowerCase("pl");
+  let list = vehicles.filter(vehicle => vehicleText(vehicle).includes(query));
+  list.sort((a,b) => {
+    if (vehicleSortMode === "fleet") {
+      return String(a.label || a.id).localeCompare(
+        String(b.label || b.id),"pl",{numeric:true});
+    }
+    return String(a.route).localeCompare(String(b.route),"pl",{numeric:true});
+  });
+  $(countId).textContent = list.length + " wyników";
+  if (!list.length) {
+    host.innerHTML = '<div class="empty">Brak pojazdów spełniających kryteria.</div>';
+    return;
+  }
+  const fragment = document.createDocumentFragment();
+  list.slice(0,1200).forEach(vehicle => {
+    const item = document.createElement("div");
+    item.className = "vehicle" +
+      (selectedVehicle === getId(vehicle) ? " selected" : "");
+    const line = document.createElement("div");
+    line.className = "line";
+    line.textContent = vehicle.route || "?";
+    const info = document.createElement("div");
+    info.className = "vehicle-info";
+    const title = document.createElement("strong");
+    title.textContent = (vehicle.type === "Tramwaj" ? "🚋 " : "🚌 ") +
+      (vehicle.label || vehicle.id || "Pojazd");
+    const small = document.createElement("small");
+    small.textContent = vehicle.headsign || vehicle.type +
+      (vehicle.tripId ? " · kurs " + vehicle.tripId : "");
+    info.append(title,small);
+    const state = document.createElement("span");
+    state.className = "delay";
+    state.textContent = "LIVE";
+    item.append(line,info,state);
+    item.addEventListener("click",() => selectVehicle(getId(vehicle)));
+    fragment.append(item);
+  });
+  host.replaceChildren(fragment);
+}
+function renderVehicles() {
+  renderVehicleList("vehicleList","search","count");
+  renderVehicleList("vehicleList2","search2","count2");
+}
+function selectVehicle(id) {
+  const vehicle = vehicles.find(item => getId(item) === String(id));
+  if (!vehicle) return;
+  selectedVehicle = String(id);
+  const trip = tripForVehicle(vehicle);
+  const details = [
+    ["Linia",vehicle.route || "—"],
+    ["Kierunek",vehicle.headsign || "—"],
+    ["Typ pojazdu",vehicle.type],
+    ["Numer pojazdu",vehicle.label || vehicle.id],
+    ["Identyfikator kursu",vehicle.tripId || "—"],
+    ["Ostatni sygnał GPS",vehicle.timestamp ?
+      new Date(vehicle.timestamp*1000).toLocaleTimeString("pl-PL") : "—"],
+    ["Przystanek w danych",vehicle.stopId || "—"],
+    ["Numer kursu GTFS",trip?.trip_id || "—"]
+  ];
+  const container = document.createElement("div");
+  container.className = "details";
+  details.forEach(([name,value]) => {
+    const box = document.createElement("div");
+    box.className = "detail";
+    const label = document.createElement("small");
+    label.textContent = name;
+    const text = document.createElement("strong");
+    text.textContent = value ?? "—";
+    box.append(label,text);
+    container.append(box);
+  });
+  const next = document.createElement("section");
+  next.className = "vehicle-next-stops";
+  next.style.gridColumn = "1 / -1";
+  next.innerHTML = '<h4>📍 Następne przystanki</h4>' +
+    '<div class="stop-muted">Wczytywanie rozkładu…</div>';
+  container.append(next);
+  $("details").replaceChildren(container);
+  renderVehicles();
+  const pos = getPosition(vehicle);
+  if (pos && mapReady) map.panTo(pos,{animate:false});
+  showVehicleRoute(vehicle).catch(error => console.warn(error));
+  getNextStops(vehicle).then(rows => {
+    if (selectedVehicle !== String(id)) return;
+    renderNextStops(next,rows);
+  }).catch(error => {
+    next.textContent = "Nie udało się wczytać przystanków: " + error.message;
+  });
+}
+async function loadStopTimes() {
+  if (stopTimesPromise) return stopTimesPromise;
+  stopTimesPromise = (async () => {
+    if (!gtfsZip) throw new Error("Brak danych GTFS");
+    const file = gtfsZip.file("stop_times.txt");
+    if (!file) throw new Error("Brak stop_times.txt");
+    const csv = await file.async("string");
+    const rows = [];
+    let headers = null;
+    parseCsvStream(csv,row => {
+      if (!headers) {headers = row;return;}
+      if (row.length < headers.length) return;
+      rows.push({
+        trip_id:row[headers.indexOf("trip_id")],
+        arrival_time:row[headers.indexOf("arrival_time")],
+        departure_time:row[headers.indexOf("departure_time")],
+        stop_id:row[headers.indexOf("stop_id")],
+        stop_sequence:Number(row[headers.indexOf("stop_sequence")]) || 0
+      });
+    });
+    stopTimesRows = rows;
+    return rows;
+  })();
+  try {return await stopTimesPromise;}
+  catch(error) {stopTimesPromise = null;throw error;}
+}
+async function getNextStops(vehicle) {
+  if (!vehicle.tripId) return [];
+  const rows = await loadStopTimes();
+  const now = new Date();
+  const seconds = now.getHours()*3600 + now.getMinutes()*60;
+  const tripRows = rows.filter(row => row.trip_id === vehicle.tripId)
+    .sort((a,b) => a.stop_sequence-b.stop_sequence);
+  const stops = new Map(gtfs.stops.map(stop => [stop.stop_id,stop]));
+  return tripRows.filter(row => {
+    const time = row.arrival_time || row.departure_time;
+    const parts = time.split(":").map(Number);
+    return parts[0]*3600+parts[1]*60 >= seconds-60;
+  }).slice(0,6).map(row => ({
+    time:row.arrival_time || row.departure_time,
+    name:stops.get(row.stop_id)?.stop_name || row.stop_id
+  }));
+}
+function renderNextStops(host,rows) {
+  host.innerHTML = "<h4>📍 Następne przystanki</h4>";
+  if (!rows.length) {
+    const note = document.createElement("div");
+    note.className = "stop-muted";
+    note.textContent = "Brak dopasowanego kursu lub kolejnych przystanków.";
+    host.append(note);
+    return;
+  }
+  rows.forEach(row => {
+    const line = document.createElement("div");
+    line.className = "stop-departure";
+    const name = document.createElement("span");
+    name.textContent = row.name;
+    const time = document.createElement("strong");
+    time.textContent = row.time;
+    line.append(name,time);
+    host.append(line);
+  });
+}
+function showStopMarkers() {
+  if (!mapReady || !gtfsLoaded) return;
+  if (stopLayer) map.removeLayer(stopLayer);
+  stopLayer = L.layerGroup().addTo(map);
+  stopMarkers.clear();
+  gtfs.stops.forEach(stop => {
+    const lat = Number(stop.stop_lat),lon = Number(stop.stop_lon);
+    if (!stop.stop_id || !Number.isFinite(lat) || !Number.isFinite(lon)) return;
+    const marker = L.marker([lat,lon],{zIndexOffset:-500,
+      icon:L.divIcon({className:"",html:'<div class="stop-marker"></div>',
+        iconSize:[13,13],iconAnchor:[6,6]})});
+    marker.bindPopup('<div class="stop-popup-title">'+$escape(stop.stop_name)+
+      '</div><div class="stop-muted">Wczytywanie odjazdów…</div>');
+    marker.on("click",() => showStopDepartures(stop,marker));
+    marker.addTo(stopLayer);
+    stopMarkers.set(stop.stop_id,{marker,stop});
+  });
+}
+async function showStopDepartures(stop,marker) {
+  marker.setPopupContent('<div class="stop-popup-title">'+$escape(stop.stop_name)+
+    '</div><div class="stop-muted">Wczytywanie odjazdów…</div>');
+  try {
+    const rows = await loadStopTimes();
+    const now = new Date();
+    const seconds = now.getHours()*3600 + now.getMinutes()*60;
+    const services = activeServices(now.toLocaleDateString("en-CA"));
+    const trips = new Map(gtfs.trips.filter(trip => services.has(trip.service_id))
+      .map(trip => [trip.trip_id,trip]));
+    const routeNames = routeMap();
+    const stopRows = rows.filter(row => row.stop_id === stop.stop_id)
+      .filter(row => trips.has(row.trip_id))
+      .map(row => {
+        const trip = trips.get(row.trip_id);
+        const time = row.departure_time || row.arrival_time;
+        const p = time.split(":").map(Number);
+        return {time,seconds:p[0]*3600+p[1]*60,
+          line:routeNames.get(trip.route_id)?.route_short_name || trip.route_id};
+      })
+      .filter(row => row.seconds >= seconds-60)
+      .sort((a,b) => a.seconds-b.seconds).slice(0,8);
+    const html = rowsForPopup(stopRows);
+    marker.setPopupContent('<div class="stop-popup-title">'+$escape(stop.stop_name)+
+      '</div><div class="stop-departures">'+html+'</div>');
+  } catch(error) {
+    marker.setPopupContent('<div class="stop-popup-title">'+$escape(stop.stop_name)+
+      '</div><div class="stop-muted">Błąd odczytu odjazdów: '+$escape(error.message)+'</div>');
+  }
+}
+function rowsForPopup(rows) {
+  if (!rows.length) return '<div class="stop-muted">Brak kolejnych odjazdów.</div>';
+  return rows.map(row => '<div class="stop-departure"><span>Linia '+
+    $escape(row.line)+'</span><strong>'+$escape(row.time)+'</strong></div>').join("");
+}
+function searchStops() {
+  const query = $("stopSearch").value.trim().toLocaleLowerCase("pl");
+  const host = $("stopSearchResults");
+  host.replaceChildren();
+  if (!query || !gtfsLoaded) return;
+  gtfs.stops.filter(stop =>
+    String(stop.stop_name).toLocaleLowerCase("pl").includes(query))
+    .slice(0,10).forEach(stop => {
+      const item = document.createElement("div");
+      item.className = "stop-result";
+      item.textContent = stop.stop_name + " · " + stop.stop_id;
+      item.addEventListener("click",() => {
+        const entry = stopMarkers.get(stop.stop_id);
+        if (entry && mapReady) {
+          map.setView(entry.marker.getLatLng(),16);
+          entry.marker.openPopup();
+        }
+        host.replaceChildren();
+      });
+      host.append(item);
+    });
+}
+function dutyFromTripId(tripId) {
+  const parts = String(tripId || "").split("_");
+  return parts.length >= 3 ? parts[parts.length-1] : "";
+}
+function renderDutyLines() {
+  const host = $("dutyLines");
+  if (!gtfsLoaded) return;
+  const date = $("dutyDate").value;
+  const services = activeServices(date);
+  const query = $("dutySearch").value.trim().toLocaleLowerCase("pl");
+  const routes = routeMap();
+  const groups = new Map();
+  gtfs.trips.forEach(trip => {
+    if (!services.has(trip.service_id)) return;
+    const route = routes.get(trip.route_id);
+    if (!route) return;
+    const name = route.route_short_name || route.route_id;
+    if (query && !name.toLocaleLowerCase("pl").includes(query)) return;
+    const duty = dutyFromTripId(trip.trip_id) || "—";
+    if (!groups.has(route.route_id)) {
+      groups.set(route.route_id,{route,name,duties:new Map()});
+    }
+    const group = groups.get(route.route_id);
+    if (!group.duties.has(duty)) group.duties.set(duty,[]);
+    group.duties.get(duty).push(trip);
+  });
+  const sorted = [...groups.values()].sort((a,b) =>
+    a.name.localeCompare(b.name,"pl",{numeric:true}));
+  if (!sorted.length) {
+    host.innerHTML = '<div class="empty">Brak linii dla wybranego dnia.</div>';
+    return;
+  }
+  host.replaceChildren();
+  sorted.forEach(group => {
+    const line = document.createElement("div");
+    line.className = "duty-line";
+    const button = document.createElement("button");
+    button.className = "duty-line-button";
+    const name = document.createElement("strong");
+    name.textContent = "Linia " + group.name;
+    const meta = document.createElement("span");
+    meta.className = "duty-line-meta";
+    meta.textContent = group.duties.size + " brygad " +
+      (expandedDutyRoute === group.route.route_id ? "⌃" : "⌄");
+    button.append(name,meta);
+    button.addEventListener("click",() => {
+      expandedDutyRoute = expandedDutyRoute === group.route.route_id ?
+        null : group.route.route_id;
+      renderDutyLines();
+    });
+    line.append(button);
+    if (expandedDutyRoute === group.route.route_id) {
+      const list = document.createElement("div");
+      list.className = "duty-task-list";
+      [...group.duties.entries()].sort((a,b) =>
+        a[0].localeCompare(b[0],"pl",{numeric:true})).forEach(([duty,trips]) => {
+        const task = document.createElement("button");
+        task.className = "duty-task-button";
+        if (selectedDutyKey === group.route.route_id+"::"+duty) {
+          task.classList.add("active");
+        }
+        const label = document.createElement("strong");
+        label.textContent = "Brygada " + duty;
+        const info = document.createElement("span");
+        info.className = "duty-task-meta";
+        info.textContent = trips.length + " kursów ›";
+        task.append(label,info);
+        task.addEventListener("click",() => showDutySchedule(group.route,duty,trips));
+        list.append(task);
+      });
+      line.append(list);
+    }
+    host.append(line);
+  });
+}
+async function showDutySchedule(route,duty,trips) {
+  selectedDutyKey = route.route_id+"::"+duty;
+  $("dutyDetailTitle").textContent =
+    "Linia " + (route.route_short_name || route.route_id) + " · brygada " + duty;
+  $("dutyDetailMeta").textContent = trips.length + " kursów · " + $("dutyDate").value;
+  $("dutyDetail").textContent = "Wczytywanie rozkładu…";
+  renderDutyLines();
+  try {
+    const rows = await loadStopTimes();
+    const wanted = new Set(trips.map(trip => trip.trip_id));
+    const stops = new Map(gtfs.stops.map(stop => [stop.stop_id,stop]));
+    const byTrip = new Map();
+    rows.forEach(row => {
+      if (!wanted.has(row.trip_id)) return;
+      if (!byTrip.has(row.trip_id)) byTrip.set(row.trip_id,[]);
+      byTrip.get(row.trip_id).push(row);
+    });
+    const ordered = trips.map(trip => ({
+      trip,rows:(byTrip.get(trip.trip_id) || []).sort(
+        (a,b) => a.stop_sequence-b.stop_sequence)
+    })).sort((a,b) => {
+      const ta = a.rows[0]?.departure_time || "99:99:99";
+      const tb = b.rows[0]?.departure_time || "99:99:99";
+      return ta.localeCompare(tb);
+    });
+    const host = $("dutyDetail");
+    host.replaceChildren();
+    ordered.forEach((entry,index) => {
+      const section = document.createElement("details");
+      section.className = "duty-trip";
+      const summary = document.createElement("summary");
+      summary.className = "duty-trip-head";
+      const title = document.createElement("strong");
+      title.textContent = "Kurs " + (index+1);
+      const span = document.createElement("span");
+      const first = entry.rows[0],last = entry.rows[entry.rows.length-1];
+      span.textContent = (first?.departure_time || "—") + " – " +
+        (last?.arrival_time || last?.departure_time || "—") +
+        " · " + entry.rows.length + " przystanków";
+      summary.append(title,span);
+      section.append(summary);
+      let rendered = false;
+      section.addEventListener("toggle",() => {
+        if (!section.open || rendered) return;
+        rendered = true;
+        const fragment = document.createDocumentFragment();
+        entry.rows.forEach(row => {
+          const item = document.createElement("div");
+          item.className = "duty-stop";
+          const time = document.createElement("span");
+          time.className = "duty-stop-time";
+          time.textContent = row.departure_time || row.arrival_time || "—";
+          const name = document.createElement("span");
+          name.className = "duty-stop-name";
+          name.textContent = stops.get(row.stop_id)?.stop_name || row.stop_id;
+          item.append(time,name);
+          fragment.append(item);
+        });
+        section.append(fragment);
+      });
+      host.append(section);
+    });
+    if (!ordered.length) host.textContent = "Brak kursów w wybranej brygadzie.";
+  } catch(error) {
+    $("dutyDetail").textContent = "Błąd odczytu rozkładu: " + error.message;
+  }
+}
+async function loadGtfs() {
+  $("gtfsStatus").textContent = "Pobieranie oficjalnych danych GTFS…";
+  try {
+    const response = await fetch(GTFS_URL,{cache:"no-store"});
+    if (!response.ok) throw new Error("GTFS HTTP " + response.status);
+    gtfsZip = await JSZip.loadAsync(await response.arrayBuffer());
+    const read = async name => {
+      const file = gtfsZip.file(name);
+      return file ? parseCsv(await file.async("string")) : [];
+    };
+    const [routes,trips,stops,calendar,calendarDates] = await Promise.all([
+      read("routes.txt"),read("trips.txt"),read("stops.txt"),
+      read("calendar.txt"),read("calendar_dates.txt")
+    ]);
+    if (!routes.length || !trips.length || !stops.length) {
+      throw new Error("Brak wymaganych plików w GTFS");
+    }
+    gtfs = {routes,trips,stops,calendar,calendarDates};
+    gtfsLoaded = true;
+    $("gtfsStatus").textContent = routes.length + " linii · " +
+      trips.length + " kursów · " + stops.length + " przystanków";
+    showStopMarkers();
+    renderDutyLines();
+  } catch(error) {
+    $("gtfsStatus").textContent = "Błąd GTFS: " + error.message;
+    $("dutyLines").textContent = "Nie udało się pobrać rozkładów.";
+    $("apiStatus").textContent += " GTFS: " + error.message;
+  }
+}
+async function loadRealtime() {
+  if (loadPromise) return loadPromise;
+  loadPromise = (async () => {
+    $("connection").textContent = "● Pobieranie…";
+    $("refresh").disabled = true;
+    try {
+      if (!feedMessageType) {
+        if (!window.protobuf) throw new Error("Brak biblioteki protobuf");
+        const response = await fetch(PROTO_URL,{cache:"force-cache"});
+        if (!response.ok) throw new Error("Nie można pobrać schematu GTFS-RT");
+        const proto = protobuf.parse(await response.text()).root;
+        feedMessageType = proto.lookupType("transit_realtime.FeedMessage");
+      }
+      const response = await fetch(VEHICLES_URL,{cache:"no-store"});
+      if (!response.ok) throw new Error("GPS HTTP " + response.status);
+      const buffer = await response.arrayBuffer();
+      const message = feedMessageType.decode(new Uint8Array(buffer));
+      const object = feedMessageType.toObject(message,{
+        longs:Number,enums:String,defaults:false,arrays:true,objects:true
+      });
+      const timestamp = Number(object.header?.timestamp || 0);
+      const entities = object.entity || [];
+      vehicles = entities.filter(entity => entity.vehicle?.position)
+        .map(entity => {
+          const item = entity.vehicle;
+          const trip = item.trip || {};
+          const route = trip.routeId || "";
+          const type = routeType(route);
+          return {
+            id:String(item.vehicle?.id || entity.id || ""),
+            label:String(item.vehicle?.label || item.vehicle?.id || entity.id || ""),
+            lat:Number(item.position.latitude),
+            lon:Number(item.position.longitude),
+            route:routeName(route),
+            routeId:route,
+            tripId:trip.tripId || "",
+            headsign:"",
+            type:type === "Tramwaj" ? "Tramwaj" : "Autobus",
+            stopId:item.stopId || "",
+            timestamp:Number(item.timestamp || timestamp),
+            currentStopSequence:Number(item.currentStopSequence || 0)
+          };
+        }).filter(item => item.id && Number.isFinite(item.lat) &&
+          Number.isFinite(item.lon));
+      $("connection").textContent = "● Dane aktualne";
+      $("apiShort").textContent = "OK";
+      $("infoConnection").textContent = "OK";
+      $("apiStatus").innerHTML =
+        '<span class="status-ok">● Połączono z GTFS-Realtime</span><br>' +
+        vehicles.length + " pojazdów · aktualizacja: " +
+        (timestamp ? new Date(timestamp*1000).toLocaleTimeString("pl-PL") : "brak daty");
+      renderStats();
+      renderVehicles();
+      updateMap();
+    } catch(error) {
+      $("connection").textContent = "● Błąd połączenia";
+      $("apiShort").textContent = "Błąd";
+      $("infoConnection").textContent = "Błąd";
+      $("apiStatus").textContent = "Błąd pobierania pozycji: " + error.message;
+      console.error("GTFS-RT:",error);
+    } finally {
+      $("refresh").disabled = false;
+      loadPromise = null;
+    }
+  })();
+  return loadPromise;
+}
+function showPage(page) {
+  const titles = {map:"Mapa pojazdów",vehicles:"Wszystkie pojazdy",
+    duties:"Rozkłady brygadowe",info:"Informacje"};
+  if (!titles[page]) return;
+  $("pageTitle").textContent = titles[page];
+  document.querySelectorAll(".page").forEach(section =>
+    section.classList.toggle("active",section.id === "page-"+page));
+  document.querySelectorAll(".nav button").forEach(button =>
+    button.classList.toggle("active",button.dataset.page === page));
+  if (page === "map" && mapReady) setTimeout(() => map.invalidateSize(),100);
+  if (page === "duties") renderDutyLines();
+  if (page === "vehicles") renderVehicles();
+  window.scrollTo({top:0,behavior:"smooth"});
+}
+document.querySelectorAll(".nav button").forEach(button =>
+  button.addEventListener("click",() => showPage(button.dataset.page)));
+document.querySelectorAll(".sort-button").forEach(button =>
+  button.addEventListener("click",() => {
+    vehicleSortMode = button.dataset.sort;
+    document.querySelectorAll(".sort-button").forEach(item =>
+      item.classList.toggle("active",item.dataset.sort === vehicleSortMode));
+    renderVehicles();
+  }));
+$("refresh").addEventListener("click",loadRealtime);
+$("search").addEventListener("input",renderVehicles);
+$("search2").addEventListener("input",renderVehicles);
+$("stopSearch").addEventListener("input",searchStops);
+$("dutySearch").addEventListener("input",renderDutyLines);
+$("dutyDate").addEventListener("change",() => {
+  selectedDutyKey = null;
+  $("dutyDetailTitle").textContent = "Rozkład brygadowy";
+  $("dutyDetailMeta").textContent = "Wybierz linię, a następnie brygadę";
+  $("dutyDetail").textContent = "Tutaj pojawi się rozkład wybranej brygady.";
+  renderDutyLines();
+});
+$("closeVehicleDetails").addEventListener("click",() => {
+  selectedVehicle = null;
+  clearSelectedRoute();
+  $("details").textContent = "Wybierz pojazd z listy lub mapy.";
+  renderVehicles();
+});
+initMap();
+$("dutyDate").value = new Date().toLocaleDateString("en-CA");
+loadGtfs();
+loadRealtime();
+setInterval(loadRealtime,REFRESH_MS);
+</script>
+</body>
+</html>
