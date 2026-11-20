@@ -580,20 +580,26 @@ function selectVehicle(id) {
   const vehicle = vehicles.find(item => getId(item) === String(id));
   if (!vehicle) return;
   selectedVehicle = String(id);
-  const trip = tripForVehicle(vehicle);
+  const exactTrip = tripForVehicle(vehicle);
+  const container = document.createElement("div");
+  container.className = "details";
+  const directionBox = document.createElement("div");
+  directionBox.className = "detail";
+  const directionLabel = document.createElement("small");
+  directionLabel.textContent = "Kierunek";
+  const directionText = document.createElement("strong");
+  directionText.textContent = vehicle.headsign || "Ustalanie kierunku…";
+  directionBox.append(directionLabel,directionText);
   const details = [
     ["Linia",vehicle.route || "—"],
-    ["Kierunek",vehicle.headsign || "—"],
     ["Typ pojazdu",vehicle.type],
     ["Numer pojazdu",vehicle.label || vehicle.id],
     ["Identyfikator kursu",vehicle.tripId || "—"],
     ["Ostatni sygnał GPS",vehicle.timestamp ?
       new Date(vehicle.timestamp*1000).toLocaleTimeString("pl-PL") : "—"],
     ["Przystanek w danych",vehicle.stopId || "—"],
-    ["Numer kursu GTFS",trip?.trip_id || "—"]
+    ["Numer kursu GTFS",exactTrip?.trip_id || "—"]
   ];
-  const container = document.createElement("div");
-  container.className = "details";
   details.forEach(([name,value]) => {
     const box = document.createElement("div");
     box.className = "detail";
@@ -604,22 +610,38 @@ function selectVehicle(id) {
     box.append(label,text);
     container.append(box);
   });
+  container.insertBefore(directionBox,container.children[1] || null);
   const next = document.createElement("section");
   next.className = "vehicle-next-stops";
   next.style.gridColumn = "1 / -1";
   next.innerHTML = '<h4>📍 Następne przystanki</h4>' +
-    '<div class="stop-muted">Wczytywanie rozkładu…</div>';
+    '<div class="stop-muted">Ustalanie kierunku i przystanków…</div>';
   container.append(next);
   $("details").replaceChildren(container);
   renderVehicles();
   const pos = getPosition(vehicle);
   if (pos && mapReady) map.panTo(pos,{animate:false});
   showVehicleRoute(vehicle).catch(error => console.warn(error));
-  getNextStops(vehicle).then(rows => {
+  resolveVehicleTrip(vehicle).then(async trip => {
+    if (selectedVehicle !== String(id)) return;
+    directionText.textContent = trip?.trip_headsign || vehicle.headsign ||
+      "Nie udało się ustalić kierunku";
+    const tripIdBox = [...container.querySelectorAll(".detail")].find(box =>
+      box.querySelector("small")?.textContent === "Numer kursu GTFS");
+    if (tripIdBox) tripIdBox.querySelector("strong").textContent =
+      trip?.trip_id || "Brak dopasowania";
+    const rows = await getNextStops(vehicle,trip);
     if (selectedVehicle !== String(id)) return;
     renderNextStops(next,rows);
   }).catch(error => {
-    next.textContent = "Nie udało się wczytać przystanków: " + error.message;
+    if (selectedVehicle === String(id)) {
+      next.innerHTML = '<h4>📍 Następne przystanki</h4>';
+      const note = document.createElement("div");
+      note.className = "stop-muted";
+      note.textContent = "Nie udało się ustalić trasy: " + error.message;
+      next.append(note);
+      directionText.textContent = vehicle.headsign || "Brak danych o kierunku";
+    }
   });
 }
 async function loadStopTimes() {
@@ -648,22 +670,77 @@ async function loadStopTimes() {
   try {return await stopTimesPromise;}
   catch(error) {stopTimesPromise = null;throw error;}
 }
-async function getNextStops(vehicle) {
-  if (!vehicle.tripId) return [];
+async function resolveVehicleTrip(vehicle) {
+  const exact = tripForVehicle(vehicle);
+  if (exact) return exact;
+  if (!gtfsLoaded || !vehicle.route) return null;
+  const routeIds = new Set(gtfs.routes
+    .filter(route => String(route.route_short_name || "").trim() === String(vehicle.route).trim())
+    .map(route => route.route_id));
+  if (!routeIds.size) return null;
+  const candidates = gtfs.trips.filter(trip => routeIds.has(trip.route_id));
+  if (!candidates.length) return null;
+  const rows = await loadStopTimes();
+  const candidateIds = new Set(candidates.map(trip => trip.trip_id));
+  const stops = new Map(gtfs.stops.map(stop => [stop.stop_id,stop]));
+  const pos = getPosition(vehicle);
+  const now = new Date();
+  const nowSeconds = now.getHours()*3600 + now.getMinutes()*60;
+  const stats = new Map();
+  rows.forEach(row => {
+    if (!candidateIds.has(row.trip_id)) return;
+    const time = row.departure_time || row.arrival_time;
+    if (!time) return;
+    const parts = time.split(":").map(Number);
+    const seconds = parts[0]*3600+parts[1]*60+parts[2];
+    let item = stats.get(row.trip_id);
+    if (!item) {
+      item = {first:seconds,last:seconds,nearest:Infinity,rows:[]};
+      stats.set(row.trip_id,item);
+    }
+    item.first = Math.min(item.first,seconds);
+    item.last = Math.max(item.last,seconds);
+    item.rows.push(row);
+    const stop = stops.get(row.stop_id);
+    if (pos && stop) {
+      const lat = Number(stop.stop_lat),lon = Number(stop.stop_lon);
+      if (Number.isFinite(lat) && Number.isFinite(lon)) {
+        const distance = Math.hypot((lat-pos[0])*111,(lon-pos[1])*68);
+        item.nearest = Math.min(item.nearest,distance);
+      }
+    }
+  });
+  let best = null,bestScore = Infinity;
+  candidates.forEach(trip => {
+    const item = stats.get(trip.trip_id);
+    if (!item) return;
+    const timeDistance = nowSeconds < item.first ? item.first-nowSeconds :
+      nowSeconds > item.last ? nowSeconds-item.last : 0;
+    const distanceScore = Number.isFinite(item.nearest) ? item.nearest : 100;
+    const score = distanceScore + Math.min(timeDistance/60,180)*0.18;
+    if (score < bestScore) {bestScore=score;best=trip;}
+  });
+  return best;
+}
+async function getNextStops(vehicle,matchedTrip=null) {
+  const tripId = matchedTrip?.trip_id || vehicle.tripId;
+  if (!tripId) return [];
   const rows = await loadStopTimes();
   const now = new Date();
   const seconds = now.getHours()*3600 + now.getMinutes()*60;
-  const tripRows = rows.filter(row => row.trip_id === vehicle.tripId)
+  const tripRows = rows.filter(row => row.trip_id === tripId)
     .sort((a,b) => a.stop_sequence-b.stop_sequence);
   const stops = new Map(gtfs.stops.map(stop => [stop.stop_id,stop]));
-  return tripRows.filter(row => {
+  const upcoming = tripRows.filter(row => {
     const time = row.arrival_time || row.departure_time;
+    if (!time) return false;
     const parts = time.split(":").map(Number);
-    return parts[0]*3600+parts[1]*60 >= seconds-60;
+    return parts[0]*3600+parts[1]*60+parts[2] >= seconds-60;
   }).slice(0,6).map(row => ({
     time:row.arrival_time || row.departure_time,
     name:stops.get(row.stop_id)?.stop_name || row.stop_id
   }));
+  return upcoming;
 }
 function renderNextStops(host,rows) {
   host.innerHTML = "<h4>📍 Następne przystanki</h4>";
