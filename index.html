@@ -624,7 +624,8 @@ function selectVehicle(id) {
   showVehicleRoute(vehicle).catch(error => console.warn(error));
   resolveVehicleTrip(vehicle).then(async trip => {
     if (selectedVehicle !== String(id)) return;
-    directionText.textContent = trip?.trip_headsign || vehicle.headsign ||
+    directionText.textContent = trip?.trip_headsign ||
+      await getTripDestination(trip) || vehicle.headsign ||
       "Nie udało się ustalić kierunku";
     const tripIdBox = [...container.querySelectorAll(".detail")].find(box =>
       box.querySelector("small")?.textContent === "Numer kursu GTFS");
@@ -678,7 +679,9 @@ async function resolveVehicleTrip(vehicle) {
     .filter(route => String(route.route_short_name || "").trim() === String(vehicle.route).trim())
     .map(route => route.route_id));
   if (!routeIds.size) return null;
-  const candidates = gtfs.trips.filter(trip => routeIds.has(trip.route_id));
+  const active = activeServices(new Date().toLocaleDateString("en-CA"));
+  const candidates = gtfs.trips.filter(trip =>
+    routeIds.has(trip.route_id) && (!active.size || active.has(trip.service_id)));
   if (!candidates.length) return null;
   const rows = await loadStopTimes();
   const candidateIds = new Set(candidates.map(trip => trip.trip_id));
@@ -721,6 +724,16 @@ async function resolveVehicleTrip(vehicle) {
     if (score < bestScore) {bestScore=score;best=trip;}
   });
   return best;
+}
+async function getTripDestination(trip) {
+  if (!trip?.trip_id) return "";
+  const rows = await loadStopTimes();
+  const tripRows = rows.filter(row => row.trip_id === trip.trip_id)
+    .sort((a,b) => a.stop_sequence-b.stop_sequence);
+  if (!tripRows.length) return "";
+  const stop = gtfs.stops.find(item =>
+    item.stop_id === tripRows[tripRows.length-1].stop_id);
+  return stop?.stop_name || "";
 }
 async function getNextStops(vehicle,matchedTrip=null) {
   const tripId = matchedTrip?.trip_id || vehicle.tripId;
