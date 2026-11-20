@@ -314,6 +314,7 @@ let mapReady = false;
 let vehicles = [];
 let markers = new Map();
 let stopLayer = null;
+let stopRenderer = null;
 let stopMarkers = new Map();
 let selectedVehicle = null;
 let selectedRouteLayer = null;
@@ -513,11 +514,17 @@ function updateMap() {
       const marker = L.marker(pos,{icon:makeVehicleIcon(vehicle),
         riseOnHover:true,bubblingMouseEvents:false}).addTo(map);
       marker.on("click",() => selectVehicle(id));
+      marker.__iconKey = vehicle.route + "|" + vehicle.type;
       markers.set(id,marker);
     } else {
       const marker = markers.get(id);
-      marker.setLatLng(pos);
-      marker.setIcon(makeVehicleIcon(vehicle));
+      const current = marker.getLatLng();
+      if (current.lat !== pos[0] || current.lng !== pos[1]) marker.setLatLng(pos);
+      const iconKey = vehicle.route + "|" + vehicle.type;
+      if (marker.__iconKey !== iconKey) {
+        marker.setIcon(makeVehicleIcon(vehicle));
+        marker.__iconKey = iconKey;
+      }
     }
   });
   for (const [id,marker] of markers) {
@@ -780,18 +787,23 @@ function showStopMarkers() {
   if (stopLayer) map.removeLayer(stopLayer);
   stopLayer = L.layerGroup().addTo(map);
   stopMarkers.clear();
+  if (!stopRenderer) stopRenderer = L.canvas({padding:0.5});
+  const fragment = [];
   gtfs.stops.forEach(stop => {
     const lat = Number(stop.stop_lat),lon = Number(stop.stop_lon);
     if (!stop.stop_id || !Number.isFinite(lat) || !Number.isFinite(lon)) return;
-    const marker = L.marker([lat,lon],{zIndexOffset:-500,
-      icon:L.divIcon({className:"",html:'<div class="stop-marker"></div>',
-        iconSize:[13,13],iconAnchor:[6,6]})});
+    const marker = L.circleMarker([lat,lon],{
+      renderer:stopRenderer,radius:3.5,color:"#fff0a8",
+      weight:1,opacity:0.85,fillColor:"#f4c542",fillOpacity:0.8,
+      bubblingMouseEvents:false
+    });
     marker.bindPopup('<div class="stop-popup-title">'+$escape(stop.stop_name)+
       '</div><div class="stop-muted">Wczytywanie odjazdów…</div>');
     marker.on("click",() => showStopDepartures(stop,marker));
-    marker.addTo(stopLayer);
+    fragment.push(marker);
     stopMarkers.set(stop.stop_id,{marker,stop});
   });
+  fragment.forEach(marker => marker.addTo(stopLayer));
 }
 async function showStopDepartures(stop,marker) {
   marker.setPopupContent('<div class="stop-popup-title">'+$escape(stop.stop_name)+
