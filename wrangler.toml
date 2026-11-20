@@ -1,0 +1,3 @@
+name = "warszawa-transport-api"
+main = "worker/index.js"
+compatibility_date = "2026-11-20"
