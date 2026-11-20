@@ -302,8 +302,9 @@ main {padding:27px;min-width:0}
 <script>
 "use strict";
 const $ = id => document.getElementById(id);
-const GTFS_URL = "https://mkuran.pl/gtfs/warsaw.zip";
-const VEHICLES_URL = "https://mkuran.pl/gtfs/warsaw/positions.json";
+const DATA_API = "https://warszawa-transport-api.oskarflis106.workers.dev";
+const GTFS_URL = DATA_API + "/gtfs.zip";
+const VEHICLES_URL = DATA_API + "/positions";
 const PROTO_URL =
   "https://raw.githubusercontent.com/google/transit/master/gtfs-realtime/proto/gtfs-realtime.proto";
 const REFRESH_MS = 15000;
