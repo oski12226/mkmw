@@ -303,7 +303,7 @@ main {padding:27px;min-width:0}
 "use strict";
 const $ = id => document.getElementById(id);
 const GTFS_URL = "https://mkuran.pl/gtfs/warsaw.zip";
-const VEHICLES_URL = "https://mkuran.pl/gtfs/warsaw/vehicles.pb";
+const VEHICLES_URL = "https://mkuran.pl/gtfs/warsaw/positions.json";
 const PROTO_URL =
   "https://raw.githubusercontent.com/google/transit/master/gtfs-realtime/proto/gtfs-realtime.proto";
 const REFRESH_MS = 15000;
@@ -936,51 +936,43 @@ async function loadRealtime() {
     $("connection").textContent = "● Pobieranie…";
     $("refresh").disabled = true;
     try {
-      if (!feedMessageType) {
-        if (!window.protobuf) throw new Error("Brak biblioteki protobuf");
-        const response = await fetch(PROTO_URL,{cache:"force-cache"});
-        if (!response.ok) throw new Error("Nie można pobrać schematu GTFS-RT");
-        const proto = protobuf.parse(await response.text()).root;
-        feedMessageType = proto.lookupType("transit_realtime.FeedMessage");
-      }
       const response = await fetch(VEHICLES_URL,{cache:"no-store"});
-      if (!response.ok) throw new Error("GPS HTTP " + response.status);
-      const buffer = await response.arrayBuffer();
-      const message = feedMessageType.decode(new Uint8Array(buffer));
-      const object = feedMessageType.toObject(message,{
-        longs:Number,enums:String,defaults:false,arrays:true,objects:true
-      });
-      const timestamp = Number(object.header?.timestamp || 0);
-      const entities = object.entity || [];
-      vehicles = entities.filter(entity => entity.vehicle?.position)
-        .map(entity => {
-          const item = entity.vehicle;
-          const trip = item.trip || {};
-          const route = trip.routeId || "";
-          const type = routeType(route);
-          return {
-            id:String(item.vehicle?.id || entity.id || ""),
-            label:String(item.vehicle?.label || item.vehicle?.id || entity.id || ""),
-            lat:Number(item.position.latitude),
-            lon:Number(item.position.longitude),
-            route:routeName(route),
-            routeId:route,
-            tripId:trip.tripId || "",
-            headsign:"",
-            type:type === "Tramwaj" ? "Tramwaj" : "Autobus",
-            stopId:item.stopId || "",
-            timestamp:Number(item.timestamp || timestamp),
-            currentStopSequence:Number(item.currentStopSequence || 0)
-          };
-        }).filter(item => item.id && Number.isFinite(item.lat) &&
-          Number.isFinite(item.lon));
+      if (!response.ok) throw new Error("Pozycje GPS HTTP " + response.status);
+      const data = await response.json();
+      if (!Array.isArray(data.positions)) {
+        throw new Error("Nieprawidłowy format danych GPS (brak positions[])");
+      }
+      const tripMap = new Map(gtfs.trips.map(trip => [trip.trip_id,trip]));
+      const routes = routeMap();
+      vehicles = data.positions.map(item => {
+        const trip = tripMap.get(String(item.trip_id || ""));
+        const route = trip ? routes.get(trip.route_id) : null;
+        const line = route?.route_short_name ||
+          (String(item.trip_id || "").split(":")[1] || "?");
+        const routeKind = Number(route?.route_type);
+        const isTram = routeKind === 0 || routeKind === 900 || /^T/i.test(line);
+        const timestamp = item.timestamp ? Date.parse(item.timestamp)/1000 : 0;
+        return {
+          id:String(item.id || item.side_number || ""),
+          label:String(item.side_number || item.id || ""),
+          lat:Number(item.lat),lon:Number(item.lon),
+          route:String(line),routeId:trip?.route_id || "",
+          tripId:String(item.trip_id || ""),
+          headsign:trip?.trip_headsign || "",
+          type:isTram ? "Tramwaj" : "Autobus",
+          stopId:"",timestamp:Number.isFinite(timestamp) ? timestamp : 0,
+          currentStopSequence:0
+        };
+      }).filter(item => item.id && Number.isFinite(item.lat) &&
+        Number.isFinite(item.lon) && Math.abs(item.lat)<=90 &&
+        Math.abs(item.lon)<=180);
       $("connection").textContent = "● Dane aktualne";
       $("apiShort").textContent = "OK";
       $("infoConnection").textContent = "OK";
       $("apiStatus").innerHTML =
-        '<span class="status-ok">● Połączono z GTFS-Realtime</span><br>' +
+        '<span class="status-ok">● Połączono z warszawskim GTFS-RT JSON</span><br>' +
         vehicles.length + " pojazdów · aktualizacja: " +
-        (timestamp ? new Date(timestamp*1000).toLocaleTimeString("pl-PL") : "brak daty");
+        (data.time ? new Date(data.time).toLocaleTimeString("pl-PL") : "brak daty");
       renderStats();
       renderVehicles();
       updateMap();
